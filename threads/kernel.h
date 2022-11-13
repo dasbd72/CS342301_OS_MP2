@@ -51,6 +51,10 @@ class Kernel {
     int WriteFile(char *buffer, int size, OpenFileId id);  // fileSystem call
     int ReadFile(char *buffer, int size, OpenFileId id);   // fileSystem call
     int CloseFile(OpenFileId id);                          // fileSystem call
+    int TopPhysPage() { return physPageStk[physPageStkSize - 1]; };
+    int PopPhysPage() { return physPageStk[--physPageStkSize]; };
+    void PushPhysPage(int page) { physPageStk[physPageStkSize++] = page; };
+    int PhysPagesRemain() { return physPageStkSize; };
 
     // These are public for notational convenience; really,
     // they're global variables used everywhere.
@@ -83,6 +87,8 @@ class Kernel {
 #ifndef FILESYS_STUB
     bool formatFlag;  // format the disk if this is true
 #endif
+    int *physPageStk;
+    int physPageStkSize;
 };
 
 #endif  // KERNEL_H

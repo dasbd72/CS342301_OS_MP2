@@ -64,6 +64,7 @@ SwapHeader(NoffHeader *noffH) {
 //----------------------------------------------------------------------
 
 AddrSpace::AddrSpace() {
+    /* MP2
     pageTable = new TranslationEntry[NumPhysPages];
     for (int i = 0; i < NumPhysPages; i++) {
         pageTable[i].virtualPage = i;  // for now, virt page # = phys page #
@@ -76,6 +77,7 @@ AddrSpace::AddrSpace() {
 
     // zero out the entire address space
     bzero(kernel->machine->mainMemory, MemorySize);
+    */
 }
 
 //----------------------------------------------------------------------
@@ -84,6 +86,9 @@ AddrSpace::AddrSpace() {
 //----------------------------------------------------------------------
 
 AddrSpace::~AddrSpace() {
+    for (int i = 0; i < numPages; i++) {
+        kernel->PushPhysPage(pageTable[i].physicalPage);
+    }
     delete pageTable;
 }
 
@@ -127,39 +132,102 @@ bool AddrSpace::Load(char *fileName) {
     numPages = divRoundUp(size, PageSize);
     size = numPages * PageSize;
 
+    /* MP2
     ASSERT(numPages <= NumPhysPages);  // check we're not trying
                                        // to run anything too big --
                                        // at least until we have
                                        // virtual memory
+    */
+    if (numPages > kernel->PhysPagesRemain()) {
+        ExceptionHandler(MemoryLimitException);
+    }
 
     DEBUG(dbgAddr, "Initializing address space: " << numPages << ", " << size);
 
+    pageTable = new TranslationEntry[numPages];
+
+    for (int i = 0; i < numPages; i++) {
+        pageTable[i].virtualPage = i;
+        pageTable[i].physicalPage = kernel->PopPhysPage();
+        pageTable[i].valid = TRUE;
+        pageTable[i].use = FALSE;
+        pageTable[i].dirty = FALSE;
+        pageTable[i].readOnly = FALSE;
+
+        bzero(kernel->machine->mainMemory + pageTable[i].physicalPage * PageSize, PageSize);
+    }
+
+    // MP2 begin
     // then, copy in the code and data segments into memory
-    // Note: this code assumes that virtual address = physical address
     if (noffH.code.size > 0) {
         DEBUG(dbgAddr, "Initializing code segment.");
         DEBUG(dbgAddr, noffH.code.virtualAddr << ", " << noffH.code.size);
-        executable->ReadAt(
-            &(kernel->machine->mainMemory[noffH.code.virtualAddr]),
-            noffH.code.size, noffH.code.inFileAddr);
+
+        unsigned int vaddr, physicalAddr;
+        int vpn, offset, faddr, size;
+        for (int addrOffset = 0; addrOffset < noffH.code.size; addrOffset += PageSize - offset) {
+            vaddr = noffH.code.virtualAddr + addrOffset;
+            vpn = vaddr / PageSize;
+            offset = vaddr % PageSize;
+            faddr = noffH.code.inFileAddr + addrOffset;
+            size = min(PageSize - offset, noffH.code.size - addrOffset);
+
+            ExceptionType exp = Translate(vaddr, &physicalAddr, 0);
+            if (exp == NoException) {
+                executable->ReadAt(&(kernel->machine->mainMemory[physicalAddr]), size, faddr);
+                pageTable[vpn].readOnly = TRUE;
+            } else {
+                ExceptionHandler(exp);
+            }
+        }
     }
     if (noffH.initData.size > 0) {
         DEBUG(dbgAddr, "Initializing data segment.");
         DEBUG(dbgAddr, noffH.initData.virtualAddr << ", " << noffH.initData.size);
-        executable->ReadAt(
-            &(kernel->machine->mainMemory[noffH.initData.virtualAddr]),
-            noffH.initData.size, noffH.initData.inFileAddr);
+
+        unsigned int vaddr, physicalAddr;
+        int vpn, offset, faddr, size;
+        for (int addrOffset = 0; addrOffset < noffH.initData.size; addrOffset += PageSize - offset) {
+            vaddr = noffH.initData.virtualAddr + addrOffset;
+            vpn = vaddr / PageSize;
+            offset = vaddr % PageSize;
+            faddr = noffH.initData.inFileAddr + addrOffset;
+            size = min(PageSize - offset, noffH.initData.size - addrOffset);
+
+            ExceptionType exp = Translate(vaddr, &physicalAddr, 0);
+            if (exp == NoException) {
+                executable->ReadAt(&(kernel->machine->mainMemory[physicalAddr]), size, faddr);
+            } else {
+                ExceptionHandler(exp);
+            }
+        }
     }
 
 #ifdef RDATA
     if (noffH.readonlyData.size > 0) {
         DEBUG(dbgAddr, "Initializing read only data segment.");
         DEBUG(dbgAddr, noffH.readonlyData.virtualAddr << ", " << noffH.readonlyData.size);
-        executable->ReadAt(
-            &(kernel->machine->mainMemory[noffH.readonlyData.virtualAddr]),
-            noffH.readonlyData.size, noffH.readonlyData.inFileAddr);
+
+        unsigned int vaddr, physicalAddr;
+        int vpn, offset, faddr, size;
+        for (int addrOffset = 0; addrOffset < noffH.readonlyData.size; addrOffset += PageSize - offset) {
+            vaddr = noffH.readonlyData.virtualAddr + addrOffset;
+            vpn = vaddr / PageSize;
+            offset = vaddr % PageSize;
+            faddr = noffH.readonlyData.inFileAddr + addrOffset;
+            size = min(PageSize - offset, noffH.readonlyData.size - addrOffset);
+
+            ExceptionType exp = Translate(vaddr, &physicalAddr, 0);
+            if (exp == NoException) {
+                executable->ReadAt(&(kernel->machine->mainMemory[physicalAddr]), size, faddr);
+                pageTable[vpn].readOnly = TRUE;
+            } else {
+                ExceptionHandler(exp);
+            }
+        }
     }
 #endif
+    // MP2 end
 
     delete executable;  // close file
     return TRUE;        // success

@@ -110,6 +110,9 @@ void Kernel::Initialize() {
 #endif  // FILESYS_STUB
     postOfficeIn = new PostOfficeInput(10);
     postOfficeOut = new PostOfficeOutput(reliability);
+    physPageStk = new int[NumPhysPages];
+    for (physPageStkSize = 0; physPageStkSize < NumPhysPages; physPageStkSize++) 
+        physPageStk[physPageStkSize] = physPageStkSize;
 
     interrupt->Enable();
 }
@@ -131,6 +134,7 @@ Kernel::~Kernel() {
     delete fileSystem;
     delete postOfficeIn;
     delete postOfficeOut;
+    delete[] physPageStk;
 
     Exit(0);
 }
